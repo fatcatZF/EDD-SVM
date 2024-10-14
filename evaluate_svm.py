@@ -7,13 +7,10 @@ Evaluate performance of trained SVM for environment drift detection on a specifi
 
 import numpy as np 
 
-from sklearn.pipeline import Pipeline 
 from sklearn.metrics import roc_auc_score 
 
-import gymnasium as gym 
 from huggingface_sb3 import load_from_hub
 from stable_baselines3 import PPO, SAC, DQN 
-from stable_baselines3.common.evaluation import evaluate_policy
 
 
 import pickle 
@@ -104,8 +101,7 @@ def main():
         )
         agent = SAC.load(checkpoint)
         
-    mean_reward, std_reward = evaluate_policy(agent, env1, n_eval_episodes=10, deterministic=True)
-    print(f"Mean Reward: {mean_reward}, std_reward: {std_reward}")
+    
 
 
 
