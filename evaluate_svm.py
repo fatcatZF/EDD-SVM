@@ -180,7 +180,7 @@ def main():
     print("result path: ", result_path) 
 
     with open(result_path, 'w') as f:
-        json.dump(result, f, indent=4)
+        json.dump(result, f, separators=(',', ':'))
 
 
     
