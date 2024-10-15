@@ -181,4 +181,125 @@ print(f"Number of trained models: {len(loaded_models)}")
         
 
 
+## Create undrifted environment env1 and drifted environment env2
+## and load corresponding trained agents
+if args.env == "acrobot":
+    env1, env2 = make_acrobot()
+    checkpoint = load_from_hub(
+        repo_id = "sb3/ppo-Acrobot-v1",
+        filename = "ppo-Acrobot-v1.zip",
+    )
+    agent = PPO.load(checkpoint)
+elif args.env == "cartpole":
+    env1, env2 = make_cartpole()
+    checkpoint = load_from_hub(
+            repo_id = "sb3/dqn-CartPole-v1",
+            filename = "dqn-CartPole-v1.zip",
+        )
+    agent = DQN.load(checkpoint)
+elif args.env == "lunarlander":
+    env1, env2 = make_lunarlander()
+    checkpoint = load_from_hub(
+            repo_id = "sb3/ppo-LunarLander-v2",
+            filename = "ppo-LunarLander-v2.zip",
+    )
+    agent = PPO.load(checkpoint)
+elif args.env == "mountaincar":
+    env1, env2 = make_mountaincar()
+    checkpoint = load_from_hub(
+            repo_id = "sb3/dqn-MountainCar-v0",
+            filename = "dqn-MountainCar-v0.zip",
+    )
+    agent = DQN.load(checkpoint)
+elif args.env == "mountaincar_continuous":
+    env1, env2 = make_mountaincar_continuous()
+    checkpoint = load_from_hub(
+          repo_id = "sb3/sac-MountainCarContinuous-v0",
+          filename = "sac-MountainCarContinuous-v0.zip",
+    )
+    agent = SAC.load(checkpoint) 
+else:
+    env1, env2 = make_pendulum() 
+    checkpoint = load_from_hub(
+         repo_id = "sb3/sac-Pendulum-v1",
+         filename = "sac-Pendulum-v1.zip",
+    )
+    agent = SAC.load(checkpoint)
+
+
+result = dict() # A dictionary to store the results
+for i in range(len(loaded_models)):
+    result[f"nn_ensemble_{i}"] = dict()
+
+# Run the evaluations 
+
+for i, model in enumerate(loaded_models):
+    for j in range(args.n_exp_per_model):
+        total_steps = args.env1_steps+args.env2_steps
+        scores = []
+        env_current = env1 
+        obs_t, _ = env_current.reset() 
+
+        for t in range(1, total_steps+1):
+            if t%1000 == 0:
+                print(f"model {i}, experiment {j}, step {t}")
+            action_t, _state = agent.predict(obs_t, deterministic=True)
+            obs_tplus1, r_tplus1, terminated, truncated, info = env_current.step(action_t)   
+
+            x = np.concatenate((obs_t, action_t.reshape(-1)))
+            x = model[0].transform(x.reshape(1, -1))
+            y = obs_tplus1-obs_t
+            mse = sample_and_compute_mse(model[1], x, y, n_samples=200)
+            scores.append(mse)
+
+            done = terminated or truncated
+
+            obs_t = obs_tplus1
+
+            if done:
+               obs_t, _ = env_current.reset()
+            if t==args.env1_steps:
+                env_current = env2
+                obs_t, _ = env_current.reset()
+
+        scores_drift = np.array(scores)
+
+        # compute AUC
+        y_env1 = np.zeros(3000)
+        y_env2 = np.ones(3000)
+        y = np.concatenate([y_env1, y_env2])
+        auc = roc_auc_score(y, scores_drift)
+
+        # compute Moving Average of 100 steps and Corresponding AUC
+        scores_drift_ma = np.convolve(scores_drift, np.ones(100)/100, mode='valid')
+        y_env1 = np.zeros(2901)
+        y_env2 = np.ones(3000)
+        y = np.concatenate([y_env1, y_env2])
+        auc_ma = roc_auc_score(y, scores_drift_ma)
+
+        result[f"nn_ensemble_{i}"][f"exp_{j}"] = {"scores":scores_drift.tolist(),
+                                                 "auc":auc,
+                                                 "scores_ma":scores_drift_ma.tolist(),
+                                                 "auc_ma":auc_ma}
+       
+
+        
+result_folder = os.path.join('.',"experiments", args.env, "results")
+if not os.path.exists(result_folder):
+    os.makedirs(result_folder) 
+
+current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+result_file = f"nn_ensemble-{args.env}-{current_time}.json"
+
+
+print("result file: ", result_file)
+
+result_path = os.path.join(result_folder, result_file) 
+
+print("result path: ", result_path) 
+
+with open(result_path, 'w') as f:
+    json.dump(result, f, separators=(',', ':'))
+
+
 
